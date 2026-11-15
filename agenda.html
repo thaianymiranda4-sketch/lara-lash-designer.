@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lara Lash Designer | Agenda</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4d4cb;color:#65333b;font-family:Arial,sans-serif}
+button,input,select,textarea{font:inherit}
+button{cursor:pointer}
+.tela{position:relative;max-width:600px;margin:auto}
+.tela img{width:100%;display:block}
+.toque{position:absolute;background:transparent;border:0}
+.menuBtn{top:2%;left:3%;width:15%;height:8%}
+.calBtn{top:21%;left:7%;width:86%;height:31%}
+.listaBtn{top:54%;left:6%;width:87%;height:36%}
+.maisBtn{top:85%;right:3%;width:20%;height:12%}
+#painel{display:none;position:fixed;inset:0;background:#0008;z-index:5;overflow:auto}
+.janela{background:#fff7f2;max-width:520px;min-height:40%;margin:7vh auto;padding:22px;border-radius:24px 24px 0 0;box-shadow:0 0 25px #6335}
+h2{font-family:Georgia,serif;color:#71333c}
+input,select,textarea{width:100%;padding:13px;margin:6px 0 13px;border:1px solid #d9b7ad;border-radius:12px;background:white;color:#542d35}
+label{font-size:13px;font-weight:bold}
+.btn{background:#74313f;color:white;border:0;border-radius:13px;padding:13px;margin:5px 3px 5px 0}
+.sec{background:#e9d0c5;color:#63313c}
+.item{background:white;padding:14px;border:1px solid #ecd5cc;border-radius:15px;margin:12px 0;line-height:1.6}
+.barra{display:flex;justify-content:space-between;align-items:center;gap:10px}
+small{color:#88676c}
+</style>
+</head>
+<body>
+<div class="tela">
+<img src="agenda.png" alt="Agenda Lara Lash Designer">
+<button class="toque menuBtn" onclick="abrir('menu')" aria-label="Menu"></button>
+<button class="toque calBtn" onclick="abrir('agenda')" aria-label="Calendário"></button>
+<button class="toque listaBtn" onclick="abrir('agenda')" aria-label="Atendimentos"></button>
+<button class="toque maisBtn" onclick="novo()" aria-label="Novo agendamento"></button>
+</div>
+
+<div id="painel">
+<div class="janela">
+<div class="barra">
+<h2 id="titulo"></h2>
+<button class="btn sec" onclick="fechar()">✕</button>
+</div>
+<div id="conteudo"></div>
+</div>
+</div>
+
+<script>
+const chave="lara_lash_dados_v1";
+let db;
+try{
+db=JSON.parse(localStorage.getItem(chave))||{};
+}catch(e){db={}}
+db.agendamentos ||= [];
+db.clientes ||= [];
+db.servicos ||= [];
+db.despesas ||= [];
+let tela="agenda",editando=-1;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({
+"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+}[c]));
+const dinheiro=n=>Number(n||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const valor=n=>Number(String(n||"0").replace(",","."))||0;
+const salvar=()=>localStorage.setItem(chave,JSON.stringify(db));
+const hoje=()=>new Date().toLocaleDateString("en-CA");
+const campo=(id,label,v="",tipo="text")=>`<label>${label}</label><input id="${id}" type="${tipo}" value="${esc(v)}">`;
+const escolha=(id,label,op,atual)=>`<label>${label}</label><select id="${id}">${op.map(x=>`<option ${x===atual?"selected":""}>${esc(x)}</option>`).join("")}</select>`;
+const ler=id=>$(id).value;
+function mostrar(t,h){
+$("titulo").textContent=t;
+$("conteudo").innerHTML=h;
+$("painel").style.display="block";
+}
+function fechar(){$("painel").style.display="none"}
+function abrir(sec){
+tela=sec;
+if(sec==="menu"){
+mostrar("Menu",["agenda","clientes","servicos","financeiro"].map(x=>
+`<button class="btn" style="display:block;width:100%" onclick="abrir('${x}')">${x.toUpperCase()}</button>`).join(""));
+}
+if(sec==="agenda")agenda();
+if(sec==="clientes")clientes();
+if(sec==="servicos")servicos();
+if(sec==="financeiro")financeiro();
+}
+function agenda(){
+const lista=[...db.agendamentos].sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora));
+mostrar("Agenda",`
+${campo("filtro","Consultar data",hoje(),"date")}
+<button class="btn" onclick="filtrar()">Pesquisar</button>
+<button class="btn" onclick="novo()">+ Agendamento</button>
+<div id="resultados"></div>`);
+window.listaAtual=lista;
+filtrar();
+}
+function filtrar(){
+const data=ler("filtro");
+const lista=window.listaAtual.filter(a=>!data||a.data===data);
+$("resultados").innerHTML=lista.length?lista.map(a=>{
+const i=db.agendamentos.indexOf(a);
+return `<div class="item">
+<b>${esc(a.hora)} — ${esc(a.nome)}</b>
+<div>${esc(a.procedimento)}</div>
+<div>${esc(a.data)} | ${dinheiro(a.valor)}</div>
+<small>${esc(a.status)} • ${esc(a.pagamento)}</small><div>
+<button class="btn" onclick="editar(${i})">Editar</button>
+<button class="btn sec" onclick="whats('${esc(a.zap)}')">WhatsApp</button>
+</div></div>`;
+}).join(""):"Nenhum agendamento nesta data.";
+}
+function whats(n){
+const tel=String(n).replace(/\D/g,"");
+if(!tel){alert("Cadastre o WhatsApp primeiro.");return}
+window.open("https://wa.me/"+(tel.startsWith("55")?tel:"55"+tel),"_blank");
+}
+function novo(){editando=-1;formAgenda({})}
+function editar(i){editando=i;formAgenda(db.agendamentos[i])}
+function formAgenda(a){
+const op=db.servicos.map(s=>s.nome);
+mostrar(editando<0?"Novo Agendamento":"Editar Agendamento",`
+${campo("nome","Nome da cliente",a.nome)}
+${campo("zap","WhatsApp",a.zap,"tel")}
+${campo("proc","Procedimento",a.procedimento)}
+${op.length?`<label>Escolher serviço cadastrado</label><select id="servicoEscolhido" onchange="usarServico()"><option value="">Selecionar</option>${op.map((s,i)=>`<option value="${i}">${esc(s)}</option>`).join("")}</select>`:""}
+${campo("data","Data",a.data||hoje(),"date")}
+${campo("hora","Horário",a.hora||"09:00","time")}
+${campo("valor","Valor R$",a.valor||0,"number")}
+${campo("sinal","Sinal recebido R$",a.sinal||0,"number")}
+${escolha("pag","Pagamento",["Pendente","Sinal pago","Pago"],a.pagamento||"Pendente")}
+${escolha("status","Atendimento",["Agendado","Confirmado","Concluído","Cancelado","Não compareceu"],a.status||"Agendado")}
+<label>Observações</label>
+<textarea id="obs">${esc(a.obs)}</textarea>
+<button class="btn" onclick="guardarAgenda()">Salvar agendamento</button>
+${editando>=0?`<button class="btn sec" onclick="excluirAgenda()">Excluir</button>`:""}
+`);
+}
+function usarServico(){
+const el=$("servicoEscolhido");
+if(!el||el.value==="")return;
+const s=db.servicos[Number(el.value)];
+$("proc").value=s.nome;
+$("valor").value=s.preco;
+}
+function guardarAgenda(){
+const a={
+nome:ler("nome").trim(),zap:ler("zap"),procedimento:ler("proc"),
+data:ler("data"),hora:ler("hora"),valor:valor(ler("valor")),
+sinal:valor(ler("sinal")),pagamento:ler("pag"),
+status:ler("status"),obs:ler("obs")
+};
+if(!a.nome||!a.data||!a.hora){alert("Preencha nome, data e horário.");return}
+if(a.sinal>a.valor){alert("O sinal não pode superar o valor.");return}
+if(db.agendamentos.some((x,i)=>i!==editando&&x.data===a.data&&x.hora===a.hora&&x.status!=="Cancelado")){
+alert("Já existe atendimento nesse horário.");return;
+}
+if(editando<0)db.agendamentos.push(a);
+else db.agendamentos[editando]=a;
+if(!db.clientes.some(c=>c.nome.toLowerCase()===a.nome.toLowerCase())){
+db.clientes.push({nome:a.nome,zap:a.zap,aniversario:"",obs:""});
+}
+salvar();agenda();
+}
+function excluirAgenda(){
+if(confirm("Excluir este agendamento?")){
+db.agendamentos.splice(editando,1);salvar();agenda();
+}
+}
+function clientes(){
+mostrar("Clientes",`
+<button class="btn" onclick="formCliente(-1)">+ Nova cliente</button>
+${db.clientes.map((c,i)=>`<div class="item">
+<b>${esc(c.nome)}</b><div>${esc(c.zap)}</div>
+<button class="btn" onclick="formCliente(${i})">Editar</button>
+<button class="btn sec" onclick="whats('${esc(c.zap)}')">WhatsApp</button>
+<div><small>Atendimentos: ${db.agendamentos.filter(a=>a.nome===c.nome).length}</small></div>
+</div>`).join("")}`);
+}
+function formCliente(i){
+const c=db.clientes[i]||{};
+mostrar("Ficha da Cliente",`
+${campo("cn","Nome",c.nome)}
+${campo("cz","WhatsApp",c.zap,"tel")}
+${campo("ca","Aniversário",c.aniversario,"date")}
+<label>Observações</label><textarea id="co">${esc(c.obs)}</textarea>
+<button class="btn" onclick="salvarCliente(${i})">Salvar</button>
+${i>=0?`<button class="btn sec" onclick="apagarCliente(${i})">Excluir</button>`:""}
+`);
+}
+function salvarCliente(i){
+const c={nome:ler("cn").trim(),zap:ler("cz"),aniversario:ler("ca"),obs:ler("co")};
+if(!c.nome)return alert("Informe o nome.");
+if(i<0)db.clientes.push(c);else db.clientes[i]=c;
+salvar();clientes();
+}
+function apagarCliente(i){
+if(confirm("Excluir cliente?")){
+db.clientes.splice(i,1);salvar();clientes();
+}
+}
+function servicos(){
+mostrar("Serviços",`
+<button class="btn" onclick="formServico(-1)">+ Novo serviço</button>
+${db.servicos.map((s,i)=>`<div class="item"><b>${esc(s.nome)}</b>
+<div>${dinheiro(s.preco)} • ${esc(s.duracao)} minutos</div>
+<button class="btn" onclick="formServico(${i})">Editar</button>
+<button class="btn sec" onclick="apagarServico(${i})">Excluir</button></div>`).join("")}`);
+}
+function formServico(i){
+const s=db.servicos[i]||{};
+mostrar("Serviço",`
+${campo("sn","Nome",s.nome)}
+${campo("sp","Preço R$",s.preco||0,"number")}
+${campo("sd","Duração em minutos",s.duracao||60,"number")}
+<button class="btn" onclick="salvarServico(${i})">Salvar</button>`);
+}
+function salvarServico(i){
+const s={nome:ler("sn").trim(),preco:valor(ler("sp")),duracao:valor(ler("sd"))};
+if(!s.nome)return alert("Informe o serviço.");
+if(i<0)db.servicos.push(s);else db.servicos[i]=s;
+salvar();servicos();
+}
+function apagarServico(i){
+if(confirm("Excluir serviço?")){
+db.servicos.splice(i,1);salvar();servicos();
+}
+}
+function financeiro(){
+const receb=db.agendamentos.reduce((t,a)=>t+(a.pagamento==="Pago"?a.valor:a.pagamento==="Sinal pago"?a.sinal:0),0);
+const despesas=db.despesas.reduce((t,d)=>t+d.valor,0);
+const total=db.agendamentos.filter(a=>a.status!=="Cancelado").reduce((t,a)=>t+a.valor,0);
+mostrar("Financeiro",`
+<div class="item"><b>Recebido:</b> ${dinheiro(receb)}</div>
+<div class="item"><b>Despesas:</b> ${dinheiro(despesas)}</div>
+<div class="item"><b>Saldo:</b> ${dinheiro(receb-despesas)}</div>
+<div class="item"><b>A receber (estimado):</b> ${dinheiro(Math.max(0,total-receb))}</div>
+<button class="btn" onclick="novaDespesa()">+ Despesa</button>
+${db.despesas.map((d,i)=>`<div class="item">${esc(d.nome)} — ${dinheiro(d.valor)}
+<button class="btn sec" onclick="apagarDespesa(${i})">Excluir</button></div>`).join("")}`);
+}
+function novaDespesa(){
+mostrar("Nova despesa",`
+${campo("dn","Descrição")}
+${campo("dv","Valor R$",0,"number")}
+<button class="btn" onclick="salvarDespesa()">Salvar</button>`);
+}
+function salvarDespesa(){
+if(!ler("dn").trim())return alert("Informe a descrição.");
+db.despesas.push({nome:ler("dn"),valor:valor(ler("dv"))});
+salvar();financeiro();
+}
+function apagarDespesa(i){
+if(confirm("Excluir despesa?")){
+db.despesas.splice(i,1);salvar();financeiro();
+}
+}
+</script>
+</body>
+</html>
